@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>T^3: The Platformer</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <audio id="bgMusic" autoplay></audio>
+    <script>
+        const tracks = [
+            { src: "../assets/Tung Tung Sahur (Instrumental).mp3", volume: 1.0 },
+            { src: "../assets/TripleTSong.mp3", volume: 0.7 }
+        ];
+        let trackIndex = 0;
+        const audio = document.getElementById("bgMusic");
+        audio.src = tracks[trackIndex].src;
+        audio.volume = tracks[trackIndex].volume;
+        audio.addEventListener("ended", () => {
+            trackIndex = (trackIndex + 1) % tracks.length;
+            audio.src = tracks[trackIndex].src;
+            audio.volume = tracks[trackIndex].volume;
+            audio.play();
+        });
+    </script>
+</head>
+<body class="funtime-bg" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding-left: 0; padding-top: 0;">
+    <h1 style="
+        font-family: Impact, 'Arial Black', sans-serif;
+        font-size: 3.4em;
+        text-align: center;
+        margin: 0.4em auto 0.3em auto;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #ff1111;
+        text-shadow:
+            0 0 12px #ff0000,
+            0 0 28px #cc0000,
+            3px 3px 0 #6a0000,
+            5px 5px 0 #3a0000,
+            7px 7px 18px rgba(0,0,0,0.8);
+        -webkit-text-stroke: 2px #8b0000;
+        width: 100%;
+    ">Tung Tung Tung Sahur Platformer</h1>
+    <canvas id="gameCanvas" width="900" height="600" style="border:4px solid #8b0000; background:#1a0a00; border-radius:18px; box-shadow:0 4px 32px #c000; margin: 40px 0 24px 0;"></canvas>
+   
+    <script>
+    // ===================== CONSTANTS =====================
+    const SCALE = 1.5;
+    const GRAVITY = 0.6 * SCALE;
+    const JUMP = -17 * SCALE;
+    const MOVE = 6 * SCALE;
+    const LEVEL_WIDTH = 2700;
+    const VIEWPORT_WIDTH = 900;
+    const VIEWPORT_HEIGHT = 600;
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // ===================== ASSETS =====================
+    const playerImg = new Image();
+    playerImg.src = 'https://static.wikia.nocookie.net/character-stats-and-profiles/images/5/52/Sahur2.webp/revision/latest/scale-to-width-down/340?cb=20250510085254';
+    let imgLoaded = false;
+    playerImg.onload = () => { imgLoaded = true; };
+
+    const batImg = new window.Image();
+    batImg.crossOrigin = 'anonymous';
+    batImg.src = 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Baseball_bat_%28PSF%29.png/320px-Baseball_bat_%28PSF%29.png';
+    let batImgLoaded = false;
+    batImg.onload = () => { batImgLoaded = true; };
+
+    // ===================== ENEMY TYPES =====================
+    const enemyTypes = [
+        {
+            name: 'Bombardino Crocodilo',
+            color: '#2e8b57',
+            w: 90 * SCALE, h: 70 * SCALE, speed: 2 * SCALE,
+            maxHp: 3, attackCooldown: 200, aggroRange: 720,
+            imgSrc: 'https://media.printables.com/media/prints/1224224/images/9178270_c3f5024a-ea2c-4655-a0fb-f4e0bf256783_10cf6be6-8ee2-43dd-b95e-82514e0f301c/thumbs/cover/800x800/jpeg/img_4257.jpg',
+            img: null, imgLoaded: false,
+        },
+        {
+            name: 'Tralalelo Tralala',
+            color: '#b22222',
+            w: 65 * SCALE, h: 65 * SCALE, speed: 5 * SCALE,
+            maxHp: 2, attackCooldown: 130, aggroRange: 500,
+            imgSrc: 'https://m.media-amazon.com/images/I/51MIXhKSb8L._AC_UF1000,1000_QL80_.jpg',
+            img: null, imgLoaded: false,
+        },
+        {
+            name: 'Ballerina Cappuccina',
+            color: '#8b008b',
+            w: 60 * SCALE, h: 80 * SCALE, speed: 2.5 * SCALE,
+            maxHp: 2, attackCooldown: 150, aggroRange: 520,
+            imgSrc: 'https://makerworld.bblmw.com/makerworld/model/DSM00000001693031/design/2025-08-12_02b686dcd7922.png?x-oss-process=image/resize,w_1200/ignore-error,1',
+            img: null, imgLoaded: false,
+        },
+    ];
+    enemyTypes.forEach(t => {
+        t.img = new Image();
+        t.img.src = t.imgSrc;
+        t.img.onload = () => { t.imgLoaded = true; };
+    });
+
+    // ===================== LEVEL TEMPLATES =====================
+    // 5 hand-crafted strategic layouts. Ground y=570, h=30. Platform h=18.
+    const levelTemplates = [
+        { // 0: Staircase climb — platforms rise then fall, enemies guard key crossings
+            platforms: [
+                { x: 0,    y: 570, w: 430, h: 30 },
+                { x: 510,  y: 490, w: 160, h: 18 },
+                { x: 760,  y: 410, w: 160, h: 18 },
+                { x: 1010, y: 490, w: 130, h: 18 },
+                { x: 1230, y: 390, w: 180, h: 18 },
+                { x: 1490, y: 300, w: 160, h: 18 },
+                { x: 1730, y: 390, w: 140, h: 18 },
+                { x: 1960, y: 480, w: 160, h: 18 },
+                { x: 2200, y: 390, w: 160, h: 18 },
+                { x: 2460, y: 570, w: 240, h: 30 },
+            ],
+            coins: [
+                { x: 565, y: 460 }, { x: 815, y: 380 }, { x: 1275, y: 360 },
+                { x: 1535, y: 270 }, { x: 2245, y: 360 },
+            ],
+            enemySlots: [
+                { x: 600, y: 450, typeIdx: 1 },
+                { x: 1300, y: 350, typeIdx: 0 },
+                { x: 2010, y: 440, typeIdx: 2 },
+            ],
+        },
+        { // 1: Valleys and peaks — wide gaps force platform use, Bombardino guards high ground
+            platforms: [
+                { x: 0,    y: 570, w: 300, h: 30 },
+                { x: 380,  y: 440, w: 200, h: 18 },
+                { x: 670,  y: 340, w: 140, h: 18 },
+                { x: 880,  y: 440, w: 120, h: 18 },
+                { x: 1080, y: 570, w: 250, h: 30 },
+                { x: 1410, y: 420, w: 180, h: 18 },
+                { x: 1670, y: 310, w: 160, h: 18 },
+                { x: 1910, y: 410, w: 130, h: 18 },
+                { x: 2110, y: 520, w: 150, h: 18 },
+                { x: 2350, y: 420, w: 130, h: 18 },
+                { x: 2510, y: 570, w: 190, h: 30 },
+            ],
+            coins: [
+                { x: 430, y: 410 }, { x: 710, y: 310 }, { x: 1450, y: 390 },
+                { x: 1710, y: 280 }, { x: 2390, y: 390 },
+            ],
+            enemySlots: [
+                { x: 430, y: 400, typeIdx: 0 },
+                { x: 910, y: 400, typeIdx: 1 },
+                { x: 1710, y: 270, typeIdx: 2 },
+                { x: 2150, y: 480, typeIdx: 1 },
+            ],
+        },
+        { // 2: Long jumps over pits — narrow platforms, timing-critical jumps
+            platforms: [
+                { x: 0,    y: 570, w: 350, h: 30 },
+                { x: 470,  y: 460, w: 130, h: 18 },
+                { x: 700,  y: 380, w: 110, h: 18 },
+                { x: 910,  y: 300, w: 130, h: 18 },
+                { x: 1120, y: 380, w: 120, h: 18 },
+                { x: 1330, y: 460, w: 110, h: 18 },
+                { x: 1510, y: 570, w: 200, h: 30 },
+                { x: 1810, y: 420, w: 150, h: 18 },
+                { x: 2050, y: 320, w: 140, h: 18 },
+                { x: 2280, y: 420, w: 140, h: 18 },
+                { x: 2500, y: 570, w: 200, h: 30 },
+            ],
+            coins: [
+                { x: 510, y: 430 }, { x: 740, y: 350 }, { x: 945, y: 270 },
+                { x: 1845, y: 390 }, { x: 2090, y: 290 },
+            ],
+            enemySlots: [
+                { x: 510, y: 420, typeIdx: 2 },
+                { x: 935, y: 260, typeIdx: 0 },
+                { x: 1360, y: 420, typeIdx: 1 },
+                { x: 1845, y: 380, typeIdx: 0 },
+                { x: 2295, y: 380, typeIdx: 2 },
+            ],
+        },
+        { // 3: Multi-level vertical — stacked platforms, enemies on every tier
+            platforms: [
+                { x: 0,    y: 570, w: 280, h: 30 },
+                { x: 330,  y: 490, w: 150, h: 18 },
+                { x: 330,  y: 375, w: 150, h: 18 },
+                { x: 570,  y: 300, w: 200, h: 18 },
+                { x: 850,  y: 375, w: 150, h: 18 },
+                { x: 850,  y: 490, w: 150, h: 18 },
+                { x: 1080, y: 570, w: 200, h: 30 },
+                { x: 1370, y: 460, w: 180, h: 18 },
+                { x: 1630, y: 360, w: 180, h: 18 },
+                { x: 1890, y: 460, w: 180, h: 18 },
+                { x: 2150, y: 360, w: 180, h: 18 },
+                { x: 2410, y: 570, w: 290, h: 30 },
+            ],
+            coins: [
+                { x: 365, y: 455 }, { x: 365, y: 345 }, { x: 615, y: 270 },
+                { x: 1415, y: 430 }, { x: 1675, y: 330 }, { x: 2195, y: 330 },
+            ],
+            enemySlots: [
+                { x: 365, y: 445, typeIdx: 1 },
+                { x: 615, y: 260, typeIdx: 0 },
+                { x: 890, y: 445, typeIdx: 2 },
+                { x: 1680, y: 320, typeIdx: 0 },
+                { x: 1935, y: 420, typeIdx: 1 },
+                { x: 2195, y: 320, typeIdx: 2 },
+            ],
+        },
+        { // 4: Boss rush — wide platforms with many Bombardinos, require careful timing
+            platforms: [
+                { x: 0,    y: 570, w: 350, h: 30 },
+                { x: 440,  y: 440, w: 240, h: 18 },
+                { x: 780,  y: 310, w: 200, h: 18 },
+                { x: 1060, y: 440, w: 200, h: 18 },
+                { x: 1340, y: 570, w: 200, h: 30 },
+                { x: 1630, y: 390, w: 250, h: 18 },
+                { x: 1970, y: 280, w: 200, h: 18 },
+                { x: 2260, y: 390, w: 200, h: 18 },
+                { x: 2510, y: 570, w: 190, h: 30 },
+            ],
+            coins: [
+                { x: 490, y: 410 }, { x: 830, y: 280 }, { x: 1110, y: 410 },
+                { x: 1685, y: 360 }, { x: 2025, y: 250 }, { x: 2310, y: 360 },
+            ],
+            enemySlots: [
+                { x: 490, y: 400, typeIdx: 0 },
+                { x: 830, y: 270, typeIdx: 0 },
+                { x: 1100, y: 400, typeIdx: 1 },
+                { x: 1690, y: 350, typeIdx: 2 },
+                { x: 2030, y: 240, typeIdx: 0 },
+                { x: 2295, y: 350, typeIdx: 1 },
+            ],
+        },
+    ];
+
+    // Build 15 levels from templates with scaling difficulty
+    const levels = Array.from({ length: 15 }, (_, i) => {
+        const tpl = levelTemplates[i % levelTemplates.length];
+        const diff = 1 + i * 0.12;
+        const platforms = tpl.platforms.map(p => ({ ...p }));
+        const coins = tpl.coins.map(c => ({ ...c, collected: false }));
+        const enemies = tpl.enemySlots.map((slot, k) => {
+            const t = enemyTypes[slot.typeIdx];
+            return {
+                name: t.name, color: t.color,
+                w: t.w, h: t.h,
+                speed: t.speed * diff,
+                maxHp: t.maxHp + Math.floor(i / 5),
+                hp: t.maxHp + Math.floor(i / 5),
+                attackCooldown: Math.max(60, t.attackCooldown - i * 4),
+                attackTimer: k * 45,
+                aggroRange: t.aggroRange,
+                x: slot.x, y: slot.y,
+                dir: k % 2 === 0 ? 1 : -1,
+                min: slot.x - 130, max: slot.x + 190,
+                charging: false, chargeTimer: 0, chargeVx: 0,
+                hitFlash: 0,
+            };
+        });
+        return { platforms, enemies, coins };
+    });
+
+    // ===================== GAME STATE =====================
+    let currentLevel = 0;
+    let gameState = 'playing'; // 'playing' | 'gameover' | 'win'
+    let score = 0;
+    let cameraX = 0;
+    let platforms = levels[0].platforms;
+    let enemies = JSON.parse(JSON.stringify(levels[0].enemies));
+    let coins = levels[0].coins.map(c => ({ ...c }));
+    let projectiles = [];
+    let explosions = [];
+    let spirals = [];
+
+    // ===================== PLAYER =====================
+    const player = {
+        x: 40, y: 450,
+        w: 60 * SCALE, h: 80 * SCALE,
+        vy: 0, onGround: true,
+        hp: 3, maxHp: 3,
+        lives: 3,
+        invincible: 0,
+    };
+
+    // Bat swing
+    let swinging = false;
+    let swingAngle = 0;
+    let swingTimer = 0;
+    const SWING_DURATION = 18;
+    const SWING_REACH = 110 * SCALE;
+    const SWING_WIDTH = 28 * SCALE;
+
+    let keys = { left: false, right: false };
+
+    // ===================== LEVEL MANAGEMENT =====================
+    function resetLevel() {
+        platforms = levels[currentLevel].platforms;
+        enemies = JSON.parse(JSON.stringify(levels[currentLevel].enemies));
+        coins = levels[currentLevel].coins.map(c => ({ ...c }));
+        projectiles = [];
+        player.x = 40; player.y = 450; player.vy = 0; player.onGround = true;
+        cameraX = 0;
+        swinging = false; swingTimer = 0;
+    }
+
+    // ===================== PLAYER DAMAGE =====================
+    function damagePlayer(amount) {
+        if (player.invincible > 0) return;
+        player.hp -= amount;
+        player.invincible = 90;
+        if (player.hp <= 0) {
+            player.lives--;
+            player.hp = player.maxHp;
+            if (player.lives <= 0) {
+                gameState = 'gameover';
+            } else {
+                resetLevel();
+            }
+        }
+    }
+
+    // ===================== ENEMY HIT =====================
+    function hitEnemy(e, idx, damage) {
+        e.hp -= damage;
+        e.hitFlash = 12;
+        explosions.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 25 * SCALE, color: '#ff8800', frame: 0, maxFrame: 12 });
+        if (e.hp <= 0) {
+            explosions.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 55 * SCALE, color: '#e22', frame: 0, maxFrame: 22 });
+            const type = enemyTypes.find(t => t.name === e.name);
+            spirals.push({ x: e.x, y: e.y, w: e.w, h: e.h, img: type ? type.img : null, color: e.color, vx: 8 * e.dir, vy: -12, angle: 0 });
+            score += 100 + currentLevel * 10;
+            enemies.splice(idx, 1);
+            return true;
+        }
+        return false;
+    }
+
+    // ===================== ENEMY ATTACKS =====================
+    function doEnemyAttack(e) {
+        const px = player.x + player.w / 2;
+        const ex = e.x + e.w / 2;
+        const ey = e.y + e.h / 2;
+
+        if (e.name === 'Bombardino Crocodilo') {
+            // Lob a bomb in an arc toward player — horizontal aim, always arcs up
+            const dx = px - ex;
+            const horizSpeed = Math.min(10, Math.max(4, Math.abs(dx) / 30));
+            const vx = Math.sign(dx) * horizSpeed;
+            projectiles.push({
+                x: ex, y: e.y,
+                vx, vy: -14,
+                type: 'bomb', r: 13, damage: 1,
+                grav: 0.42 * SCALE, angle: 0, angVel: 0.12,
+            });
+        } else if (e.name === 'Tralalelo Tralala') {
+            // Charge dash toward player
+            e.charging = true;
+            e.chargeTimer = 45;
+            e.chargeVx = Math.sign(px - ex) * 18 * SCALE;
+        } else if (e.name === 'Ballerina Cappuccina') {
+            // Drop a spinning cappuccino cup downward with slight horizontal drift
+            const driftVx = Math.sign(px - ex) * 2.5;
+            projectiles.push({
+                x: ex, y: e.y + e.h,
+                vx: driftVx, vy: 1,
+                type: 'cappuccino', r: 14, damage: 1,
+                grav: 0.38 * SCALE, angle: 0, angVel: 0.2,
+            });
+        }
+    }
+
+    // ===================== UPDATE ENEMIES =====================
+    function updateEnemies() {
+        const px = player.x + player.w / 2;
+        const py = player.y + player.h / 2;
+
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const e = enemies[i];
+            if (e.hitFlash > 0) e.hitFlash--;
+
+            const dist = Math.hypot(px - (e.x + e.w / 2), py - (e.y + e.h / 2));
+
+            if (e.charging) {
+                e.x += e.chargeVx;
+                e.chargeTimer--;
+                // Clamp to level bounds during charge
+                if (e.x < 0) e.x = 0;
+                if (e.x + e.w > LEVEL_WIDTH) e.x = LEVEL_WIDTH - e.w;
+                if (e.chargeTimer <= 0) { e.charging = false; e.chargeVx = 0; }
+            } else {
+                e.x += e.speed * e.dir;
+                if (e.x < e.min || e.x + e.w > e.max) e.dir *= -1;
+            }
+
+            // Attack when player in aggro range
+            if (dist < e.aggroRange) {
+                e.attackTimer++;
+                if (e.attackTimer >= e.attackCooldown) {
+                    e.attackTimer = 0;
+                    doEnemyAttack(e);
+                }
+            }
+        }
+    }
+
+    // ===================== UPDATE PROJECTILES =====================
+    function updateProjectiles() {
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            const p = projectiles[i];
+            p.vy += p.grav;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.angle += p.angVel;
+
+            // Off-screen cleanup
+            if (p.y > VIEWPORT_HEIGHT + 60 || p.x < cameraX - 300 || p.x > cameraX + VIEWPORT_WIDTH + 300) {
+                projectiles.splice(i, 1);
+                continue;
+            }
+
+            // Bombs explode on platform contact
+            if (p.type === 'bomb' && p.vy > 0) {
+                let hitPlat = false;
+                for (const plat of platforms) {
+                    if (p.x > plat.x && p.x < plat.x + plat.w &&
+                        p.y + p.r > plat.y && p.y - p.r < plat.y + plat.h) {
+                        hitPlat = true;
+                        break;
+                    }
+                }
+                if (hitPlat) {
+                    explosions.push({ x: p.x, y: p.y, r: 50 * SCALE, color: '#ff6600', frame: 0, maxFrame: 22 });
+                    explosions.push({ x: p.x, y: p.y, r: 30 * SCALE, color: '#ffcc00', frame: 0, maxFrame: 14 });
+                    // Area damage: hurt player if close
+                    if (Math.hypot(player.x + player.w / 2 - p.x, player.y + player.h / 2 - p.y) < 65 * SCALE) {
+                        damagePlayer(1);
+                    }
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+            }
+
+            // Hit player
+            const pdx = player.x + player.w / 2 - p.x;
+            const pdy = player.y + player.h / 2 - p.y;
+            if (Math.hypot(pdx, pdy) < p.r + player.w * 0.32) {
+                damagePlayer(p.damage);
+                explosions.push({ x: p.x, y: p.y, r: 28 * SCALE, color: '#ff4400', frame: 0, maxFrame: 14 });
+                projectiles.splice(i, 1);
+            }
+        }
+    }
+
+    // ===================== BAT HIT ENEMIES =====================
+    function batHitEnemies() {
+        if (!swinging) return;
+        const bpx = player.x + player.w;
+        const bpy = player.y + player.h / 2;
+        const bx2 = bpx + Math.cos(swingAngle) * SWING_REACH;
+        const by2 = bpy + Math.sin(swingAngle) * SWING_REACH;
+        const dx = bx2 - bpx, dy = by2 - bpy;
+
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const e = enemies[i];
+            const ex = e.x + e.w / 2;
+            const ey = e.y + e.h / 2;
+            let t = ((ex - bpx) * dx + (ey - bpy) * dy) / (dx * dx + dy * dy);
+            t = Math.max(0, Math.min(1, t));
+            const cx = bpx + t * dx, cy = bpy + t * dy;
+            if (Math.hypot(ex - cx, ey - cy) < Math.max(e.w, e.h) / 2 + SWING_WIDTH / 2) {
+                hitEnemy(e, i, 1);
+            }
+        }
+    }
+
+    // ===================== BAT DEFLECT PROJECTILES =====================
+    function batDeflectProjectiles() {
+        if (!swinging) return;
+        const bpx = player.x + player.w;
+        const bpy = player.y + player.h / 2;
+        const bx2 = bpx + Math.cos(swingAngle) * SWING_REACH;
+        const by2 = bpy + Math.sin(swingAngle) * SWING_REACH;
+        const dx = bx2 - bpx, dy = by2 - bpy;
+
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            const p = projectiles[i];
+            let t = ((p.x - bpx) * dx + (p.y - bpy) * dy) / (dx * dx + dy * dy);
+            t = Math.max(0, Math.min(1, t));
+            const cx = bpx + t * dx, cy = bpy + t * dy;
+            if (Math.hypot(p.x - cx, p.y - cy) < p.r + SWING_WIDTH / 2) {
+                // Deflect back with extra force
+                p.vx = -p.vx * 1.4;
+                p.vy = -12;
+                p.angVel *= -1.2;
+                score += 5;
+                explosions.push({ x: p.x, y: p.y, r: 18 * SCALE, color: '#ffffff', frame: 0, maxFrame: 8 });
+            }
+        }
+    }
+
+    // ===================== CHECK ENEMY BODY COLLISION =====================
+    function checkEnemyCollision() {
+        for (const e of enemies) {
+            if (player.x < e.x + e.w && player.x + player.w > e.x &&
+                player.y < e.y + e.h && player.y + player.h > e.y) {
+                damagePlayer(1);
+                return;
+            }
+        }
+    }
+
+    // ===================== COINS =====================
+    function updateCoins() {
+        coins.forEach(c => {
+            if (c.collected) return;
+            if (player.x < c.x + 20 && player.x + player.w > c.x &&
+                player.y < c.y + 20 && player.y + player.h > c.y) {
+                c.collected = true;
+                score += 10;
+            }
+        });
+    }
+
+    function drawCoins() {
+        coins.forEach(c => {
+            if (c.collected) return;
+            const sx = c.x - cameraX;
+            if (sx < -25 || sx > VIEWPORT_WIDTH + 25) return;
+            ctx.save();
+            const cg = ctx.createRadialGradient(sx + 7, c.y + 7, 2, sx + 10, c.y + 10, 12);
+            cg.addColorStop(0, '#fff8a0');
+            cg.addColorStop(1, '#e8a000');
+            ctx.beginPath(); ctx.arc(sx + 10, c.y + 10, 12, 0, Math.PI * 2);
+            ctx.fillStyle = cg; ctx.fill();
+            ctx.strokeStyle = '#8b6000'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = '#8b0000'; ctx.font = 'bold 11px Arial';
+            ctx.textAlign = 'center'; ctx.fillText('P', sx + 10, c.y + 14);
+            ctx.restore();
+        });
+    }
+
+    // ===================== PROJECTILE DRAWING =====================
+    function drawProjectiles() {
+        projectiles.forEach(p => {
+            const sx = p.x - cameraX;
+            ctx.save();
+            ctx.translate(sx, p.y);
+            ctx.rotate(p.angle);
+            if (p.type === 'bomb') {
+                // Black cannonball with fuse
+                ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+                ctx.fillStyle = '#1a1a1a'; ctx.fill();
+                ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 2.5; ctx.stroke();
+                // Fuse
+                ctx.strokeStyle = '#888'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(0, -p.r); ctx.lineTo(3, -p.r - 10); ctx.stroke();
+                // Spark
+                ctx.fillStyle = '#ffcc00';
+                ctx.beginPath(); ctx.arc(3, -p.r - 10, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ff4400';
+                ctx.beginPath(); ctx.arc(3, -p.r - 10, 2, 0, Math.PI * 2); ctx.fill();
+            } else if (p.type === 'cappuccino') {
+                // Cup body
+                ctx.beginPath();
+                ctx.ellipse(0, 2, p.r, p.r * 0.65, 0, 0, Math.PI * 2);
+                ctx.fillStyle = '#5a2e1a'; ctx.fill();
+                // Foam top
+                ctx.beginPath();
+                ctx.ellipse(0, -p.r * 0.2, p.r * 0.88, p.r * 0.42, 0, 0, Math.PI * 2);
+                ctx.fillStyle = '#f0e0c0'; ctx.fill();
+                // Coffee surface
+                ctx.beginPath();
+                ctx.ellipse(0, -p.r * 0.25, p.r * 0.62, p.r * 0.28, 0, 0, Math.PI * 2);
+                ctx.fillStyle = '#b06030'; ctx.fill();
+                // Handle
+                ctx.strokeStyle = '#5a2e1a'; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(p.r * 0.8, 4, p.r * 0.35, -0.8, 0.8); ctx.stroke();
+            }
+            ctx.restore();
+        });
+    }
+
+    // ===================== BACKGROUND =====================
+    const bgPizzas = [
+        { x: 0, y: 55, r: 35 }, { x: 200, y: 85, r: 28 },
+        { x: 400, y: 42, r: 42 }, { x: 600, y: 75, r: 32 },
+        { x: 800, y: 55, r: 38 }, { x: 1000, y: 90, r: 25 },
+        { x: 1200, y: 48, r: 40 }, { x: 1400, y: 68, r: 30 },
+    ];
+    const bgBuildings = [
+        { x: 0, w: 85, h: 130, dome: true }, { x: 130, w: 50, h: 80, dome: false },
+        { x: 230, w: 60, h: 105, dome: true }, { x: 360, w: 90, h: 145, dome: true },
+        { x: 520, w: 55, h: 88, dome: false }, { x: 640, w: 70, h: 115, dome: true },
+        { x: 780, w: 80, h: 100, dome: false }, { x: 940, w: 65, h: 135, dome: true },
+        { x: 1070, w: 50, h: 78, dome: false }, { x: 1180, w: 75, h: 120, dome: true },
+        { x: 1330, w: 90, h: 95, dome: false },
+    ];
+
+    function drawPizzaCloud(x, y, r) {
+        ctx.save(); ctx.globalAlpha = 0.88;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#c8860a'; ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, r * 0.78, 0, Math.PI * 2); ctx.fillStyle = '#cc2200'; ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, r * 0.55, 0, Math.PI * 2); ctx.fillStyle = '#f0d060'; ctx.fill();
+        ctx.fillStyle = '#7a2000';
+        for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI * 2;
+            ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.34, y + Math.sin(a) * r * 0.34, r * 0.09, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.strokeStyle = '#8b4513'; ctx.lineWidth = 1.2;
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    function drawCityscape() {
+        const horizY = 490;
+        ctx.save();
+        bgBuildings.forEach(b => {
+            const sx = b.x - cameraX * 0.15;
+            if (sx + b.w < -20 || sx > VIEWPORT_WIDTH + 20) return;
+            ctx.globalAlpha = 0.38; ctx.fillStyle = '#1a0800';
+            ctx.fillRect(sx, horizY - b.h, b.w, b.h + 150);
+            ctx.globalAlpha = 0.12; ctx.fillStyle = '#ffe080';
+            for (let wy = horizY - b.h + 10; wy < horizY - 10; wy += 22)
+                for (let wx = sx + 8; wx < sx + b.w - 8; wx += 16)
+                    ctx.fillRect(wx, wy, 8, 10);
+            ctx.globalAlpha = 0.38; ctx.fillStyle = '#1a0800';
+            if (b.dome) { ctx.beginPath(); ctx.arc(sx + b.w / 2, horizY - b.h, b.w * 0.38, Math.PI, Math.PI * 2); ctx.fill(); }
+        });
+        ctx.restore();
+    }
+
+    function drawBackground() {
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, VIEWPORT_HEIGHT);
+        skyGrad.addColorStop(0, '#1a1a6e');
+        skyGrad.addColorStop(0.28, '#c0390a');
+        skyGrad.addColorStop(0.55, '#e8a020');
+        skyGrad.addColorStop(0.78, '#b03010');
+        skyGrad.addColorStop(1, '#3a1400');
+        ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+
+        ctx.save(); ctx.globalAlpha = 0.18;
+        const gL = ctx.createLinearGradient(0, 0, 70, 0);
+        gL.addColorStop(0, '#009246'); gL.addColorStop(1, 'transparent');
+        ctx.fillStyle = gL; ctx.fillRect(0, 0, 70, VIEWPORT_HEIGHT);
+        const gR = ctx.createLinearGradient(VIEWPORT_WIDTH - 70, 0, VIEWPORT_WIDTH, 0);
+        gR.addColorStop(0, 'transparent'); gR.addColorStop(1, '#ce2b37');
+        ctx.fillStyle = gR; ctx.fillRect(VIEWPORT_WIDTH - 70, 0, 70, VIEWPORT_HEIGHT);
+        ctx.restore();
+
+        const sunX = VIEWPORT_WIDTH - 160, sunY = 90;
+        ctx.save();
+        const sunGlow = ctx.createRadialGradient(sunX, sunY, 18, sunX, sunY, 90);
+        sunGlow.addColorStop(0, 'rgba(255,220,50,0.7)'); sunGlow.addColorStop(1, 'rgba(255,80,0,0)');
+        ctx.fillStyle = sunGlow; ctx.fillRect(sunX - 90, sunY - 90, 180, 180);
+        ctx.beginPath(); ctx.arc(sunX, sunY, 36, 0, Math.PI * 2); ctx.fillStyle = '#ffe030'; ctx.fill();
+        ctx.restore();
+
+        bgPizzas.forEach(p => {
+            const sx = p.x - cameraX * 0.3;
+            if (sx > VIEWPORT_WIDTH + 55 || sx < -55) return;
+            drawPizzaCloud(sx, p.y, p.r);
+        });
+        drawCityscape();
+    }
+
+    // ===================== PLATFORMS =====================
+    function drawPlatforms() {
+        platforms.forEach(p => {
+            const sx = p.x - cameraX;
+            if (sx + p.w < 0 || sx > VIEWPORT_WIDTH) return;
+            ctx.fillStyle = '#e8d5a3'; ctx.fillRect(sx, p.y, p.w, p.h);
+            const th = Math.max(4, Math.floor(p.h / 3));
+            const sw = p.w / 3;
+            ctx.fillStyle = '#009246'; ctx.fillRect(sx, p.y, sw, th);
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(sx + sw, p.y, sw, th);
+            ctx.fillStyle = '#ce2b37'; ctx.fillRect(sx + sw * 2, p.y, sw, th);
+            ctx.fillStyle = '#b89a60'; ctx.fillRect(sx, p.y + p.h - 3, p.w, 3);
+            ctx.save(); ctx.strokeStyle = 'rgba(160,130,80,0.35)'; ctx.lineWidth = 1;
+            for (let vx = sx + 25; vx < sx + p.w; vx += 35) {
+                ctx.beginPath(); ctx.moveTo(vx, p.y + th); ctx.lineTo(vx + 12, p.y + p.h); ctx.stroke();
+            }
+            ctx.restore();
+        });
+    }
+
+    // ===================== ENEMIES =====================
+    function drawEnemies() {
+        enemies.forEach(e => {
+            const type = enemyTypes.find(t => t.name === e.name);
+            const sx = e.x - cameraX;
+            if (sx + e.w < -10 || sx > VIEWPORT_WIDTH + 10) return;
+
+            ctx.save();
+            if (e.hitFlash > 0 && e.hitFlash % 4 < 2) ctx.globalAlpha = 0.35;
+            if (type && type.imgLoaded) {
+                if (e.dir < 0) {
+                    ctx.translate(sx + e.w / 2, e.y + e.h / 2); ctx.scale(-1, 1);
+                    ctx.drawImage(type.img, -e.w / 2, -e.h / 2, e.w, e.h);
+                } else {
+                    ctx.drawImage(type.img, sx, e.y, e.w, e.h);
+                }
+            } else {
+                ctx.fillStyle = e.color; ctx.fillRect(sx, e.y, e.w, e.h);
+                ctx.fillStyle = '#fff'; ctx.font = '10px Arial';
+                ctx.fillText(e.name.split(' ')[0], sx + 2, e.y + e.h / 2);
+            }
+            ctx.restore();
+
+            // HP bar above enemy
+            const barY = e.y - 14;
+            ctx.fillStyle = '#2a2a2a'; ctx.fillRect(sx, barY, e.w, 9);
+            const ratio = e.hp / e.maxHp;
+            ctx.fillStyle = ratio > 0.5 ? '#00dd00' : ratio > 0.25 ? '#ffaa00' : '#dd0000';
+            ctx.fillRect(sx, barY, e.w * ratio, 9);
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(sx, barY, e.w, 9);
+
+            // Bombardino wind-up warning "!"
+            if (e.name === 'Bombardino Crocodilo' && e.attackTimer > e.attackCooldown * 0.72) {
+                ctx.save();
+                ctx.font = `bold ${16 * SCALE}px Impact`;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#ff2200'; ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+                ctx.strokeText('!', sx + e.w / 2, e.y - 20);
+                ctx.fillText('!', sx + e.w / 2, e.y - 20);
+                ctx.restore();
+            }
+            // Tralalelo charge indicator
+            if (e.charging) {
+                ctx.save();
+                ctx.font = `bold ${14 * SCALE}px Impact`;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#ffcc00'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+                ctx.strokeText('CHARGE!', sx + e.w / 2, e.y - 20);
+                ctx.fillText('CHARGE!', sx + e.w / 2, e.y - 20);
+                ctx.restore();
+            }
+        });
+    }
+
+    // ===================== PLAYER DRAW =====================
+    function drawPlayer() {
+        // Blink during invincibility
+        if (player.invincible > 0 && Math.floor(player.invincible / 6) % 2 === 0) return;
+        ctx.save();
+        if (imgLoaded) {
+            ctx.translate(player.x - cameraX + player.w / 2, player.y + player.h / 2);
+            ctx.scale(-1, 1);
+            ctx.drawImage(playerImg, -player.w / 2, -player.h / 2, player.w, player.h);
+        } else {
+            ctx.fillStyle = '#ff8800';
+            ctx.fillRect(player.x - cameraX, player.y, player.w, player.h);
+        }
+        ctx.restore();
+    }
+
+    // ===================== BAT =====================
+    function drawBat() {
+        if (!swinging) return;
+        ctx.save();
+        ctx.translate(player.x + player.w - cameraX, player.y + player.h / 2);
+        ctx.rotate(swingAngle);
+        if (batImgLoaded && batImg.naturalWidth > 0) {
+            const cropW = batImg.naturalWidth * 0.25;
+            const cropX = batImg.naturalWidth * 0.375;
+            ctx.drawImage(batImg, cropX, 0, cropW, batImg.naturalHeight, 0, -SWING_WIDTH / 2, SWING_REACH, SWING_WIDTH);
+        } else {
+            ctx.fillStyle = '#c96'; ctx.fillRect(0, -SWING_WIDTH / 2, SWING_REACH, SWING_WIDTH);
+        }
+        ctx.restore();
+    }
+
+    // ===================== EXPLOSIONS & SPIRALS =====================
+    function drawExplosions() {
+        for (let i = explosions.length - 1; i >= 0; i--) {
+            const ex = explosions[i]; ex.frame++;
+            ctx.save(); ctx.globalAlpha = 1 - ex.frame / ex.maxFrame;
+            ctx.beginPath(); ctx.arc(ex.x - cameraX, ex.y, ex.r * (1 + ex.frame / ex.maxFrame), 0, Math.PI * 2);
+            ctx.fillStyle = ex.color; ctx.fill();
+            ctx.restore();
+            if (ex.frame > ex.maxFrame) explosions.splice(i, 1);
+        }
+    }
+
+    function drawSpirals() {
+        for (let i = spirals.length - 1; i >= 0; i--) {
+            const s = spirals[i];
+            s.x += s.vx; s.y += s.vy; s.angle += 0.3; s.vy -= 0.2;
+            ctx.save(); ctx.translate(s.x - cameraX + s.w / 2, s.y + s.h / 2); ctx.rotate(s.angle);
+            if (s.img) ctx.drawImage(s.img, -s.w / 2, -s.h / 2, s.w, s.h);
+            else { ctx.fillStyle = s.color; ctx.fillRect(-s.w / 2, -s.h / 2, s.w, s.h); }
+            ctx.restore();
+            if (s.x < cameraX - 200 || s.x > cameraX + VIEWPORT_WIDTH + 200 || s.y < -200) spirals.splice(i, 1);
+        }
+    }
+
+    // ===================== HUD =====================
+    function drawHeart(cx, cy, r, filled) {
+        ctx.save();
+        ctx.fillStyle = filled ? '#e22' : '#444';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + r);
+        ctx.bezierCurveTo(cx + r * 2, cy + r * 0.3, cx + r * 2, cy - r, cx, cy - r * 0.35);
+        ctx.bezierCurveTo(cx - r * 2, cy - r, cx - r * 2, cy + r * 0.3, cx, cy + r);
+        ctx.closePath();
+        ctx.fill();
+        if (filled) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    function drawHUD() {
+        ctx.save();
+        // Level label
+        ctx.font = 'bold 16px Impact, Arial';
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.textAlign = 'left';
+        ctx.strokeText(`Level ${currentLevel + 1} / 15`, 10, 22);
+        ctx.fillStyle = '#fff'; ctx.fillText(`Level ${currentLevel + 1} / 15`, 10, 22);
+
+        // Score
+        ctx.textAlign = 'right';
+        ctx.strokeText(`Score: ${score}`, VIEWPORT_WIDTH - 10, 22);
+        ctx.fillStyle = '#ffd700'; ctx.fillText(`Score: ${score}`, VIEWPORT_WIDTH - 10, 22);
+
+        // Hearts (HP)
+        for (let i = 0; i < player.maxHp; i++) drawHeart(18 + i * 28, 40, 10, i < player.hp);
+
+        // Lives
+        ctx.fillStyle = '#ffd700'; ctx.textAlign = 'left';
+        ctx.font = 'bold 15px Impact, Arial';
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+        ctx.strokeText(`x${player.lives} lives`, 98, 50);
+        ctx.fillText(`x${player.lives} lives`, 98, 50);
+
+        // Progress bar (center top)
+        const barW = 190, barX = VIEWPORT_WIDTH / 2 - barW / 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(barX, 7, barW, 11);
+        const progGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+        progGrad.addColorStop(0, '#009246'); progGrad.addColorStop(0.5, '#fff'); progGrad.addColorStop(1, '#ce2b37');
+        ctx.fillStyle = progGrad;
+        ctx.fillRect(barX, 7, barW * Math.min(1, (player.x + player.w) / LEVEL_WIDTH), 11);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.strokeRect(barX, 7, barW, 11);
+
+        // Controls hint
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '11px Arial'; ctx.textAlign = 'center';
+        ctx.fillText('SPACE = swing bat & deflect bombs  |  ↑ = jump', VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT - 7);
+        ctx.restore();
+    }
+
+    // ===================== OVERLAY SCREENS =====================
+    function drawOverlay(topText, topColor, midText, botText) {
+        drawBackground();
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        ctx.textAlign = 'center';
+
+        ctx.font = `bold ${50 * SCALE}px Impact, Arial`;
+        ctx.fillStyle = topColor; ctx.strokeStyle = '#000'; ctx.lineWidth = 5 * SCALE;
+        ctx.strokeText(topText, VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 - 35 * SCALE);
+        ctx.fillText(topText, VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 - 35 * SCALE);
+
+        ctx.font = `${22 * SCALE}px Impact, Arial`;
+        ctx.fillStyle = '#fff'; ctx.lineWidth = 3 * SCALE;
+        ctx.strokeText(midText, VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 + 18 * SCALE);
+        ctx.fillText(midText, VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 + 18 * SCALE);
+
+        ctx.font = `${16 * SCALE}px Impact, Arial`;
+        ctx.fillStyle = '#ffd700';
+        ctx.fillText(botText, VIEWPORT_WIDTH / 2, VIEWPORT_HEIGHT / 2 + 55 * SCALE);
+        ctx.restore();
+    }
+
+    // ===================== PLATFORM COLLISION =====================
+    function platformCollision() {
+        player.onGround = false;
+        for (const p of platforms) {
+            if (player.x < p.x + p.w && player.x + player.w > p.x &&
+                player.y + player.h > p.y && player.y + player.h - player.vy <= p.y + 2 &&
+                player.vy >= 0) {
+                player.y = p.y - player.h;
+                player.vy = 0;
+                player.onGround = true;
+            }
+        }
+    }
+
+    // ===================== GAME LOOP =====================
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        cameraX = Math.max(0, Math.min(player.x + player.w / 2 - VIEWPORT_WIDTH / 2, LEVEL_WIDTH - VIEWPORT_WIDTH));
+
+        if (gameState === 'gameover') {
+            drawOverlay('GAME OVER', '#ce2b37', `Score: ${score}`, 'Press any key to restart');
+            return;
+        }
+        if (gameState === 'win') {
+            drawOverlay('MAMMA MIA!', '#009246', `Tung Tung Tung Sahur WINS!  Score: ${score}`, 'Bombardino Crocodilo is defeated!');
+            return;
+        }
+
+        // Update player
+        if (player.invincible > 0) player.invincible--;
+        if (keys.left) player.x -= MOVE;
+        if (keys.right) player.x += MOVE;
+        player.vy += GRAVITY;
+        player.y += player.vy;
+        platformCollision();
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.w > LEVEL_WIDTH) player.x = LEVEL_WIDTH - player.w;
+        if (player.y > canvas.height) { damagePlayer(1); }
+
+        updateEnemies();
+        updateProjectiles();
+        updateCoins();
+        checkEnemyCollision();
+
+        // Bat swing
+        if (swinging) {
+            swingTimer++;
+            swingAngle = -Math.PI / 2 + (Math.PI / 2) * (swingTimer / SWING_DURATION);
+            batHitEnemies();
+            batDeflectProjectiles();
+            if (swingTimer > SWING_DURATION) { swinging = false; swingTimer = 0; swingAngle = 0; }
+        }
+
+        // Level complete: reach far right
+        if (player.x + player.w >= LEVEL_WIDTH - 10) {
+            currentLevel++;
+            if (currentLevel >= levels.length) {
+                gameState = 'win';
+            } else {
+                resetLevel();
+            }
+        }
+
+        // Draw everything
+        drawBackground();
+        drawPlatforms();
+        drawCoins();
+        drawEnemies();
+        drawSpirals();
+        drawExplosions();
+        drawProjectiles();
+        drawBat();
+        drawPlayer();
+        drawHUD();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // ===================== INPUT =====================
+    document.addEventListener('keydown', e => {
+        if (gameState === 'gameover') {
+            currentLevel = 0; score = 0;
+            player.lives = 3; player.hp = player.maxHp;
+            gameState = 'playing';
+            resetLevel();
+            requestAnimationFrame(gameLoop);
+            return;
+        }
+        if (e.code === 'ArrowLeft') keys.left = true;
+        if (e.code === 'ArrowRight') keys.right = true;
+        if (e.code === 'ArrowUp' && player.onGround) { player.vy = JUMP; player.onGround = false; }
+        if (e.code === 'Space' && !swinging) { swinging = true; swingTimer = 0; swingAngle = -Math.PI / 2; }
+        if (['ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault();
+    });
+    document.addEventListener('keyup', e => {
+        if (e.code === 'ArrowLeft') keys.left = false;
+        if (e.code === 'ArrowRight') keys.right = false;
+    });
+
+    gameLoop();
+    </script>
+    <a href="scratch.html" class="home">Back to Home</a>
+</body>
+</html>

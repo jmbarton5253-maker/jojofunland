@@ -1,0 +1,101 @@
+/* ── BASE PAGE STYLES ──────────────────────────────────────────── */
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 22px;
+    color: black;
+
+    /* Remove the default gap around the edges so the header touches all sides */
+    margin: 0;
+    padding: 0;
+    min-width: fit-content;      /* body stretches to hold wide content, so % children fill it */
+
+    /* Body always fills the full page, so putting the color here
+       means it will never cut off short */
+    background-color: rgb(254, 253, 248);
+}
+
+/* ── HEADER BAR ────────────────────────────────────────────────── */
+/*  Dark navy background = strong contrast against the light-blue body */
+.site-header {
+    background-color: #66b9fe;   /* dark navy */
+    color: #ffffff;              /* white text so it's readable on dark bg */
+    padding: 20px 40px;          /* breathing room: 20px top/bottom, 40px left/right */
+    width: 100%;
+    box-sizing: border-box;      /* include padding in the width calculation */
+}
+
+/* Make the big title a little smaller inside the header */
+.site-header h1 {
+    margin: 0 0 6px 0;          /* remove default gap, add a small gap below */
+    font-size: 28px;
+}
+
+/* The subtitle line underneath the title */
+.site-header p {
+    margin: 0;
+    font-size: 14px;
+    color: rgb(254, 253, 248);            /* muted light-blue — softer than pure white */
+}
+
+/* ── PAGE BODY ─────────────────────────────────────────────────── */
+/*  flexbox turns this div into a row, putting its children side by side */
+.page-body {
+    display: flex;              /* children (sidebar + main-content) sit in a row */
+    min-height: 100vh;          /* at least as tall as the full viewport — sidebar fills it */
+}
+
+/* ── SIDEBAR ───────────────────────────────────────────────────── */
+.sidebar {
+    width: 180px;               /* fixed width — won't grow or shrink */
+    flex-shrink: 0;             /* prevent flexbox from squishing it */
+    background-color: #4a90c4;  /* slightly darker blue than the header */
+    padding: 20px;
+}
+
+/* Sidebar heading */
+.sidebar h3 {
+    color: #ffffff;
+    margin: 0 0 14px 0;
+    font-size: 16px;
+    text-transform: uppercase;  /* makes "Links" look like a label */
+    letter-spacing: 1px;
+}
+
+/* Each link stacks vertically and looks like a nav item */
+.sidebar a {
+    display: block;             /* block makes each link take its own full-width row */
+    color: #ffffff;
+    text-decoration: none;      /* removes the underline */
+    padding: 8px 10px;
+    border-radius: 4px;         /* slightly rounded corners */
+    margin-bottom: 4px;
+    font-size: 15px;
+}
+
+/* Highlight a link when you hover over it */
+.sidebar a:hover {
+    background-color: #66b9fe;  /* lighter blue on hover */
+}
+
+/* ── MAIN CONTENT AREA ─────────────────────────────────────────── */
+.main-content {
+    flex-grow: 1;               /* take up all remaining space to the right of sidebar */
+    background-color: rgb(234, 247, 255);
+    padding: 20px 40px;
+}
+
+/* Keep the old .backdrop class working in case it's used elsewhere */
+.backdrop {
+    background-color: rgb(222, 240, 255);
+}
+
+.anchor {
+    color: #4a90c4;             /* same blue as the sidebar for consistency */
+    text-decoration: none;
+    text-decoration-line: none;
+   
+}
+
+.anchor:hover {
+    color:bisque
+}
